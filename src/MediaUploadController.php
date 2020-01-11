@@ -1,8 +1,10 @@
 <?php namespace Triasrahman\MediaUpload;
 
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Input;
 use Intervention\Image\Facades\Image;
 
 class MediaUploadController extends \Illuminate\Routing\Controller
@@ -26,12 +28,12 @@ class MediaUploadController extends \Illuminate\Routing\Controller
         }
 
         // Check if file is uploaded
-        if ( ! \Input::hasFile('file') )
+        if ( !Input::hasFile('file') )
         {
             return [ 'error' => 'file-not-found' ];
         }
 
-        $file  = \Input::file('file');
+        $file = Input::file('file');
 
         // get file size in Bytes
         $file_size = $file->getSize();
@@ -55,21 +57,39 @@ class MediaUploadController extends \Illuminate\Routing\Controller
         }
 
         // saving file
-        $filename = date('U').str_random(10);
-        $file->move(public_path().'/'.$config['dir'].'/'.$type, $filename.'.'.$ext);
+        // saving file
+        $move_path              = base_path() . '/public/uploads/';
+        $hash                   = md5(config('app.salt') . ':' . date('U') . str_random(4));
+        $filename_first_dir     = substr($hash, 0, 4);
+        $filename_second_dir    = substr($hash, 4, 4);
+        $filename               = substr($hash, 8);
+        
+        $file->move($move_path . $type . '/' . $filename_first_dir . '/' . $filename_second_dir, $filename . '.' . $ext);
 
-        $file_path = $config['dir'].'/'.$type.'/'.$filename.'.'.$ext;
-
+        $file_path = $type . '/' . $filename_first_dir . '/' . $filename_second_dir . '/' . $filename . '.' . $ext;
+        
         if ( $format == 'image' && isset($config['types'][$type]['image']) && count($config['types'][$type]['image']) )
         {
 
-            $img = Image::make(public_path().'/'.$file_path);
+            $img = Image::make($move_path.'/'.$file_path);
 
             foreach($config['types'][$type]['image'] as $task => $params)
             {
                 switch($task) {
                     case 'resize':
-                        $img->resize($params[0], $params[1]);
+                        if ($params[0] && $params[1]) {
+                            $img->resize($params[0], $params[1]);
+                        } else {
+                            if ($img->width() > $params[0])  {
+                                $img->resize($params[0], null, function ($constraint) {
+                                    $constraint->aspectRatio();
+                                });
+                            } else {
+                                $img->resize($img->width(), null, function ($constraint) {
+                                    $constraint->aspectRatio();
+                                });
+                            }
+                        }
                         break;
                     case 'fit':
                         $img->fit($params[0], $params[1]);
